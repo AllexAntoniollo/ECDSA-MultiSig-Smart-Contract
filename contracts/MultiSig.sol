@@ -2,10 +2,12 @@
 pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "hardhat/console.sol";
 
 contract MultiSig {
 
+    event UserAdded(address indexed user);
+    event TokenTransferred(address indexed to, uint amount);
+    event TokenChanged(address indexed newToken);
 
     address public owner;
     mapping(address => bool) public isUser;
@@ -21,23 +23,6 @@ contract MultiSig {
         ++numOfUsers;
     }
 
-    function addUser(address _user, bytes[] memory signatures) external {
-        require(signatures.length > numOfUsers / 2,"You dont have the most signatures");
-        require(!isUser[_user], "User already added");
-        uint validSignatures;
-        for (uint256 index = 0; index < signatures.length; index++) {
-            for (uint256 indexJ = 0; indexJ < userList.length; indexJ++) {
-                if(verifyAddUser(userList[indexJ], _user, signatures[index])){
-                    ++validSignatures;
-                    break;
-                }
-            }
-        }
-        require(validSignatures > numOfUsers/2,"One or more signatures are not valid");
-        isUser[_user] = true;
-        userList.push(_user);
-        ++numOfUsers;
-    }
 
     function isUserAddress(address _user) external view returns (bool) {
         return isUser[_user];
@@ -46,23 +31,34 @@ contract MultiSig {
     function getUsers() public view returns (address[] memory) {
         return userList;
     }
-    function sendToken(address to, uint amount, bytes[] memory signatures) external {
-        require(signatures.length > numOfUsers / 2,"You dont have the most signatures");
-        require(token.balanceOf(address(this)) > amount,"This contract does not have suficient balance to spend");
-        uint validSignatures;
-        for (uint256 index = 0; index < signatures.length; index++) {
-            for (uint256 indexJ = 0; indexJ < userList.length; indexJ++) {
-                if(verifyTransfer(userList[indexJ], to, amount, signatures[index])){
-                    ++validSignatures;
-                    break;
-                }
-            }
-        }
-        require(validSignatures > numOfUsers/2,"One or more signatures are not valid");
+    function addUser(address _user, bytes[] memory signatures) external {
+        require(signatures.length > numOfUsers / 2, "You dont have the most signatures");
+        require(!isUser[_user], "User already added");
         
-        token.transfer(to,amount);
+        bytes32 messageHash = getEthSignedMessageHash(getMessageHashAddUser(_user));
+        require(verifySignatures(messageHash, signatures), "One or more signatures are not valid");
+        
+        isUser[_user] = true;
+        userList.push(_user);
+        ++numOfUsers;
+        emit UserAdded(_user);
 
     }
+
+    function sendToken(address to, uint amount, bytes[] memory signatures) external {
+        require(signatures.length > numOfUsers / 2, "You dont have the most signatures");
+        require(token.balanceOf(address(this)) >= amount, "This contract does not have sufficient balance to spend");
+        
+        bytes32 messageHash = getEthSignedMessageHash(getMessageHashTransfer(to, amount));
+        require(verifySignatures(messageHash, signatures), "One or more signatures are not valid");
+        
+        token.transfer(to, amount);
+        
+        emit TokenTransferred(to, amount);
+
+    }
+
+
 
     function getMessageHashTransfer(
         address _to,
@@ -145,6 +141,27 @@ contract MultiSig {
         }
 
         // implicitly return (r, s, v)
+    }
+    modifier onlyOwner() {
+        require(msg.sender == owner, "Not the owner");
+        _;
+    }
+
+    function changeToken(address _token) external onlyOwner {
+        token = IERC20(_token);
+        emit TokenChanged(_token);
+
+    }
+
+    function verifySignatures(bytes32 messageHash, bytes[] memory signatures) internal view returns (bool) {
+        uint validSignatures;
+        for (uint256 index = 0; index < signatures.length; index++) {
+            address signer = recoverSigner(messageHash, signatures[index]);
+            if (isUser[signer]) {
+                validSignatures++;
+            }
+        }
+        return validSignatures > numOfUsers / 2;
     }
 
 

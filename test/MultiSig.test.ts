@@ -44,6 +44,39 @@ describe("MultiSig", function () {
     
 
   })
+  it("Should not add user (no signatures)", async function () {
+    const {
+      owner,
+      token,
+      multiSig,
+      otherAccount,
+
+    } = await loadFixture(deployFixture);
+
+    const user = otherAccount.address
+
+    await expect(multiSig.addUser(user,[])).to.be.revertedWith("You dont have the most signatures")
+    
+
+  })
+
+  it("Should not add user (invalid sgnatures)", async function () {
+    const {
+      owner,
+      token,
+      multiSig,
+      otherAccount,
+
+    } = await loadFixture(deployFixture);
+
+    const user = otherAccount.address
+    const hash = await multiSig.getMessageHashAddUser(user)
+    const sig = await otherAccount.signMessage(ethers.getBytes(hash))
+
+    await expect(multiSig.addUser(user,[sig,sig,sig])).to.be.revertedWith("One or more signatures are not valid")
+    
+
+  })
 
   it("Should send amount", async function () {
     const {
@@ -67,7 +100,7 @@ describe("MultiSig", function () {
     const amount = ethers.parseUnits("50","ether")
 
     const hash = await multiSig.getMessageHashTransfer(to, amount)
-
+    
     const sig = await owner.signMessage(ethers.getBytes(hash))
     
     const sig2 = await otherAccount.signMessage(ethers.getBytes(hash))
@@ -88,5 +121,42 @@ describe("MultiSig", function () {
 
     expect(await token.balanceOf(otherAccount.address)).to.be.equal(ethers.parseUnits("50","ether"))
   })
+  it("Should not send tokens (no signatures)", async function () {
+    const {
+      owner,
+      token,
+      multiSig,
+      otherAccount,
 
+    } = await loadFixture(deployFixture);
+
+    const user = otherAccount.address
+
+    await expect(multiSig.sendToken(user,1,[])).to.be.revertedWith("You dont have the most signatures")
+    
+
+  })
+  it("Should not send tokens (invalid signatures)", async function () {
+    const {
+      owner,
+      token,
+      multiSig,
+      otherAccount,
+      multiSigAddress
+
+    } = await loadFixture(deployFixture);
+    await token.mint(multiSigAddress,ethers.parseUnits("100","ether"))
+
+    const to = otherAccount.address
+
+    const amount = ethers.parseUnits("50","ether")
+
+    const hash = await multiSig.getMessageHashTransfer(to, amount)
+    
+    const sig = await otherAccount.signMessage(ethers.getBytes(hash))
+
+    await expect(multiSig.sendToken(to,amount,[sig])).to.be.revertedWith("One or more signatures are not valid")
+    
+
+  })
 });
